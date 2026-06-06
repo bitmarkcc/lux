@@ -52,6 +52,7 @@ enum class SettingsNavigation {
     DISPLAY,
     PRIVACY,
     ADVANCED,
+    CERTIMARK,
     ABOUT,
     FAQ,
     DEBUG
@@ -94,6 +95,9 @@ fun SettingsScreen(
             }
             SettingsClickable(SettingsClickableState(title = stringResource(R.string.settings_advanced))) {
                 onNavigate(SettingsNavigation.ADVANCED)
+            }
+            SettingsClickable(SettingsClickableState(title = stringResource(R.string.settings_certimark))) {
+                onNavigate(SettingsNavigation.CERTIMARK)
             }
             SettingsClickable(
                 SettingsClickableState(

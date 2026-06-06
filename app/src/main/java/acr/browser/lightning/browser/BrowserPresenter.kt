@@ -95,6 +95,7 @@ class BrowserPresenter @Inject constructor(
     private var view: BrowserContract.View? = null
     private var viewState: BrowserViewState = BrowserViewState(
         displayUrl = "",
+        pageUrl = "",
         isRefresh = true,
         sslState = SslState.None,
         progress = 0,
@@ -255,6 +256,7 @@ class BrowserPresenter @Inject constructor(
                         title = title,
                         isLoading = progress < 100
                     ).takeIf { !isSearchViewFocused } ?: viewState.displayUrl,
+                    pageUrl = url,
                     enableFullMenu = !url.isSpecialUrl(),
                     themeColor = Option.Some(themeColor),
                     isRefresh = (progress == 100).takeIf { !isSearchViewFocused }

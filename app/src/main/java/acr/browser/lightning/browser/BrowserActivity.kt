@@ -49,8 +49,22 @@ import acr.browser.lightning.extensions.takeIfInstance
 import acr.browser.lightning.extensions.tint
 import acr.browser.lightning.preference.datastore.getUnsafe
 import acr.browser.lightning.search.SuggestionsAdapter
+import acr.browser.lightning.certimark.CertimarkChecker
+import acr.browser.lightning.certimark.CertimarkResult
+import acr.browser.lightning.certimark.CertimarkStatus
+import acr.browser.lightning.ssl.createCertimarkDrawable
 import acr.browser.lightning.ssl.createSslDrawableForState
+import acr.browser.lightning.ssl.SslState
 import acr.browser.lightning.utils.value
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.URL
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
@@ -64,7 +78,12 @@ import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.AdapterView
+import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
@@ -101,6 +120,30 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
     private var customView: View? = null
 
     private var pendingScroll = -1
+
+    private var certimarkJob: Job? = null
+    private var certimarkResult: CertimarkResult? = null
+    private var lastCheckedDomain: String? = null
+    private var currentSslState: SslState = SslState.None
+    private var currentPageUrl: String = ""
+    private var certimarkChecker: CertimarkChecker? = null
+
+    private fun getOrCreateCertimarkChecker(): CertimarkChecker {
+        return certimarkChecker ?: run {
+            val apiUrl = userPreferencesDataStore.certimarkApiUrl.getUnsafe()
+            val keyPin = userPreferencesDataStore.certimarkApiKeyPin.getUnsafe().let {
+                it.ifEmpty { null }
+            }
+            CertimarkChecker(
+                okHttpClient = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .build(),
+                apiUrl = apiUrl,
+                apiKeyPin = keyPin
+            ).also { certimarkChecker = it }
+        }
+    }
 
     @Suppress("ConvertLambdaToReference")
     private val launcher = registerForActivityResult(
@@ -353,13 +396,149 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
         binding.actionPageTools.setOnClickListener { presenter.onToolsClick() }
         binding.tabHeaderButton.setOnClickListener { presenter.onTabMenuClick() }
         binding.bookmarkBackButton.setOnClickListener { presenter.onBookmarkMenuClick() }
-        binding.searchSslStatus.setOnClickListener { presenter.onSslIconClick() }
+        binding.searchSslStatus.setOnClickListener { onShieldClick() }
 
         tabPager.longPressListener = presenter::onPageLongPress
 
         onBackPressedDispatcher.addCallback {
             presenter.onNavigateBack()
         }
+    }
+
+    private fun triggerCertimarkCheck(pageUrl: String) {
+        val domain = try {
+            URL(pageUrl).host
+        } catch (_: Exception) {
+            null
+        } ?: return
+
+        if (domain == lastCheckedDomain && certimarkResult != null) {
+            binding.searchSslStatus.setImageDrawable(createCertimarkDrawable(certimarkResult!!.status))
+            return
+        }
+
+        certimarkJob?.cancel()
+        lastCheckedDomain = domain
+        certimarkResult = null
+
+        certimarkJob = CoroutineScope(Dispatchers.Main).launch {
+            val result = withContext(Dispatchers.IO) {
+                getOrCreateCertimarkChecker().check(domain)
+            }
+            certimarkResult = result
+            if (lastCheckedDomain == domain) {
+                binding.searchSslStatus.setImageDrawable(createCertimarkDrawable(result.status))
+            }
+        }
+    }
+
+    private fun onShieldClick() {
+        val result = certimarkResult
+        val sslState = currentSslState
+
+        if (sslState is SslState.None || sslState == null) {
+            // HTTP page
+            AlertDialog.Builder(this)
+                .setIcon(createSslDrawableForState(SslState.None))
+                .setTitle(R.string.title_warning)
+                .setMessage(getString(R.string.certimark_http_warning))
+                .setPositiveButton(R.string.action_ok, null)
+                .show()
+            return
+        }
+
+        if (sslState is SslState.Invalid) {
+            // SSL error — show original SSL dialog
+            presenter.onSslIconClick()
+            return
+        }
+
+        if (result == null) {
+            // Check still in progress
+            AlertDialog.Builder(this)
+                .setTitle(lastCheckedDomain ?: "")
+                .setMessage(getString(R.string.certimark_checking))
+                .setPositiveButton(R.string.action_ok, null)
+                .show()
+            return
+        }
+
+        // Show Certimark result dialog
+        val title = result.domain
+        val descLine = result.description?.let { "$it\n\n" } ?: ""
+
+        val message = descLine + when (result.status) {
+            CertimarkStatus.MATCH_TOP -> {
+                val label = if (result.keyMatch) getString(R.string.certimark_key_match) else getString(R.string.certimark_verified)
+                val weight = result.matchedCert?.weight?.let { "\n${getString(R.string.certimark_weight)}: $it" } ?: ""
+                "$label$weight"
+            }
+            CertimarkStatus.MATCH_OTHER -> {
+                val label = if (result.keyMatch) getString(R.string.certimark_key_match_other) else getString(R.string.certimark_match_other)
+                val weight = result.matchedCert?.weight?.let { "\n${getString(R.string.certimark_weight)}: $it" } ?: ""
+                "$label$weight"
+            }
+            CertimarkStatus.NO_MATCH -> getString(R.string.certimark_no_match)
+            CertimarkStatus.NOT_MARKED -> getString(R.string.certimark_not_marked)
+            CertimarkStatus.ERROR -> getString(R.string.certimark_error, result.errorMessage ?: "")
+            CertimarkStatus.HTTP_INSECURE -> getString(R.string.certimark_http_warning)
+        }
+
+        val fullHash = result.browserCertHash
+
+        // Build custom view with copy icon next to hash
+        val dp = resources.displayMetrics.density
+        val pad = (20 * dp).toInt()
+
+        val container = ScrollView(this).apply {
+            setPadding(pad, (8 * dp).toInt(), pad, 0)
+        }
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        container.addView(layout)
+
+        // Message text
+        layout.addView(TextView(this).apply {
+            text = message
+            textSize = 16f
+        })
+
+        // Hash row with copy icon
+        if (fullHash != null) {
+            val hashRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, (12 * dp).toInt(), 0, 0)
+            }
+            val short = if (fullHash.length > 16) "${fullHash.take(8)}...${fullHash.takeLast(8)}" else fullHash
+            hashRow.addView(TextView(this).apply {
+                text = "${getString(R.string.certimark_browser_cert)}: $short"
+                textSize = 14f
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+
+            val copyBtn = ImageButton(this).apply {
+                setImageResource(R.drawable.ic_copy)
+                setBackgroundResource(android.R.color.transparent)
+                contentDescription = "Copy hash"
+                val btnSize = (32 * dp).toInt()
+                layoutParams = LinearLayout.LayoutParams(btnSize, btnSize)
+                setOnClickListener {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Certificate Hash", fullHash))
+                    Toast.makeText(this@BrowserActivity, "Hash copied", Toast.LENGTH_SHORT).show()
+                }
+            }
+            hashRow.addView(copyBtn)
+            layout.addView(hashRow)
+        }
+
+        AlertDialog.Builder(this)
+            .setIcon(createCertimarkDrawable(result.status))
+            .setTitle(title)
+            .setView(container)
+            .setPositiveButton(R.string.action_ok, null)
+            .show()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -370,6 +549,12 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
     override fun onDestroy() {
         super.onDestroy()
         presenter.onViewDetached()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Invalidate checker so settings changes take effect
+        certimarkChecker = null
     }
 
     override fun onPause() {
@@ -403,9 +588,20 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
         viewState.isBackEnabled?.let { binding.actionBack.isEnabled = it }
         viewState.isForwardEnabled?.let { binding.actionForward.isEnabled = it }
         viewState.displayUrl?.let(binding.search::setText)
-        viewState.sslState?.let {
-            binding.searchSslStatus.setImageDrawable(createSslDrawableForState(it))
-            binding.searchSslStatus.updateVisibilityForDrawable()
+        viewState.sslState?.let { sslState ->
+            currentSslState = sslState
+            binding.searchSslStatus.setImageDrawable(createSslDrawableForState(sslState))
+            binding.searchSslStatus.visibility = View.VISIBLE
+        }
+        viewState.pageUrl?.let { url ->
+            currentPageUrl = url
+            if (currentSslState is SslState.Valid) {
+                triggerCertimarkCheck(url)
+            } else {
+                certimarkJob?.cancel()
+                certimarkResult = null
+                lastCheckedDomain = null
+            }
         }
         viewState.enableFullMenu?.let {
             menuItemShare?.isVisible = it

@@ -70,7 +70,7 @@ android {
         create("lightningPlus") {
             dimension = "capabilities"
             buildConfigField("boolean", "FULL_VERSION", "Boolean.parseBoolean(\"true\")")
-            applicationId = "acr.browser.lightning"
+            applicationId = "cc.certimark.lux"
             versionCode = 101
         }
 
@@ -78,7 +78,7 @@ android {
             create("lightningLite") {
                 dimension = "capabilities"
                 buildConfigField("boolean", "FULL_VERSION", "Boolean.parseBoolean(\"false\")")
-                applicationId = "acr.browser.barebones"
+                applicationId = "cc.certimark.lux.lite"
                 versionCode = 102
             }
         }

@@ -22,6 +22,7 @@ class BrowserStateAdapter(private val browserActivity: BrowserActivity) : Browse
     override fun renderState(viewState: BrowserViewState) {
         val (
             displayUrl,
+            pageUrl,
             sslState,
             isRefresh,
             progress,
@@ -39,6 +40,7 @@ class BrowserStateAdapter(private val browserActivity: BrowserActivity) : Browse
         browserActivity.renderState(
             PartialBrowserViewState(
                 displayUrl = displayUrl.takeIf { it != currentState?.displayUrl },
+                pageUrl = pageUrl.takeIf { it != currentState?.pageUrl },
                 sslState = sslState.takeIf { it != currentState?.sslState },
                 isRefresh = isRefresh.takeIf { it != currentState?.isRefresh },
                 progress = progress.takeIf { it != currentState?.progress },

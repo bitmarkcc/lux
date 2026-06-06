@@ -491,6 +491,25 @@ class UserPreferencesDataStore @Inject constructor(
         dataStore = dataStore
     )
 
+    /**
+     * The Certimark API URL used for certificate verification.
+     */
+    val certimarkApiUrl: NonNullPreferenceStore<String> = NonNullPreferenceStore(
+        key = stringPreferencesKey(CERTIMARK_API_URL),
+        dataStore = dataStore,
+        defaultValue = "https://certimark.cc"
+    )
+
+    /**
+     * The SHA-256 fingerprint of the Certimark API server's public key (SPKI).
+     * Required for HTTPS API URLs to pin the connection. Empty for HTTP URLs.
+     */
+    val certimarkApiKeyPin: NonNullPreferenceStore<String> = NonNullPreferenceStore(
+        key = stringPreferencesKey(CERTIMARK_API_KEY_PIN),
+        dataStore = dataStore,
+        defaultValue = "512d578c6ea650c92361c8e20c8acaa1b3e9bf062a2aea839343d709b0ea3cf7"
+    )
+
     companion object {
         private const val FILE_NAME = "settings"
     }
@@ -537,3 +556,5 @@ private const val SEARCH_SUGGESTIONS = "searchSuggestionsChoice"
 private const val HOSTS_SOURCE = "hostsSource"
 private const val HOSTS_LOCAL_FILE = "hostsLocalFile"
 private const val HOSTS_REMOTE_FILE = "hostsRemoteFile"
+private const val CERTIMARK_API_URL = "certimarkApiUrl"
+private const val CERTIMARK_API_KEY_PIN = "certimarkApiKeyPin"

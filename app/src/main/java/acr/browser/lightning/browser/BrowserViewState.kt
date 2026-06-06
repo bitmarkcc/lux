@@ -27,6 +27,7 @@ import acr.browser.lightning.utils.Option
 data class BrowserViewState(
     // search bar
     val displayUrl: String,
+    val pageUrl: String,
     val sslState: SslState,
     val isRefresh: Boolean,
     val progress: Int,
@@ -54,6 +55,7 @@ data class BrowserViewState(
 data class PartialBrowserViewState(
     // search bar
     val displayUrl: String?,
+    val pageUrl: String?,
     val sslState: SslState?,
     val isRefresh: Boolean?,
     val progress: Int?,

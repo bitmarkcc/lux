@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
 
-    <string name="app_name">Lightning</string>
+    <string name="app_name">Lux</string>
     <string name="action_new_tab">New tab</string>
     <string name="action_share">Share</string>
     <string name="action_history">History</string>
@@ -342,4 +342,22 @@
 
     <!-- Search -->
     <string name="search_insert_suggestion">Insert suggestion</string>
+
+    <!-- Certimark -->
+    <string name="certimark_http_warning">Your connection to this site is not secure. Information you submit could be viewed by others.</string>
+    <string name="certimark_checking">Checking certificate…</string>
+    <string name="certimark_verified">Certificate verified via Bitmark blockchain</string>
+    <string name="certimark_key_match">Certificate verified via public key match (Bitmark blockchain)</string>
+    <string name="certimark_match_other">Certificate matches a marked cert, but a higher-weighted cert exists</string>
+    <string name="certimark_key_match_other">Public key matches a marked cert, but a higher-weighted cert exists</string>
+    <string name="certimark_no_match">Certificate does not match any marked certificates for this domain</string>
+    <string name="certimark_not_marked">This domain has no marked certificates via Linkmark</string>
+    <string name="certimark_error">Could not verify certificate: %s</string>
+    <string name="certimark_weight">Weight</string>
+    <string name="certimark_browser_cert">Browser cert</string>
+    <string name="settings_certimark">Certimark</string>
+    <string name="certimark_api_url">API URL</string>
+    <string name="certimark_api_key_pin">API server public key SHA-256</string>
+    <string name="certimark_api_key_pin_empty">Not set (no pinning)</string>
+    <string name="certimark_api_key_pin_hint">SHA-256 hex fingerprint of server public key</string>
 </resources>
