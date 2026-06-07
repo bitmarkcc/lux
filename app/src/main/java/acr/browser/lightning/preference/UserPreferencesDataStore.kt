@@ -510,6 +510,33 @@ class UserPreferencesDataStore @Inject constructor(
         defaultValue = "512d578c6ea650c92361c8e20c8acaa1b3e9bf062a2aea839343d709b0ea3cf7"
     )
 
+    /**
+     * True if a SOCKS proxy should be used for all network traffic.
+     */
+    val proxyEnabled: NonNullPreferenceStore<Boolean> = NonNullPreferenceStore(
+        key = booleanPreferencesKey(PROXY_ENABLED),
+        dataStore = dataStore,
+        defaultValue = false
+    )
+
+    /**
+     * The SOCKS proxy host address.
+     */
+    val proxyHost: NonNullPreferenceStore<String> = NonNullPreferenceStore(
+        key = stringPreferencesKey(PROXY_HOST),
+        dataStore = dataStore,
+        defaultValue = "127.0.0.1"
+    )
+
+    /**
+     * The SOCKS proxy port.
+     */
+    val proxyPort: NonNullPreferenceStore<Int> = NonNullPreferenceStore(
+        key = intPreferencesKey(PROXY_PORT),
+        dataStore = dataStore,
+        defaultValue = 9050
+    )
+
     companion object {
         private const val FILE_NAME = "settings"
     }
@@ -558,3 +585,6 @@ private const val HOSTS_LOCAL_FILE = "hostsLocalFile"
 private const val HOSTS_REMOTE_FILE = "hostsRemoteFile"
 private const val CERTIMARK_API_URL = "certimarkApiUrl"
 private const val CERTIMARK_API_KEY_PIN = "certimarkApiKeyPin"
+private const val PROXY_ENABLED = "proxyEnabled"
+private const val PROXY_HOST = "proxyHost"
+private const val PROXY_PORT = "proxyPort"

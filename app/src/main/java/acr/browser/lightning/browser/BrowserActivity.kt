@@ -61,6 +61,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.net.URL
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -84,6 +86,9 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.webkit.ProxyConfig
+import androidx.webkit.ProxyController
+import androidx.webkit.WebViewFeature
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
@@ -134,13 +139,19 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
             val keyPin = userPreferencesDataStore.certimarkApiKeyPin.getUnsafe().let {
                 it.ifEmpty { null }
             }
+            val proxy = if (userPreferencesDataStore.proxyEnabled.getUnsafe()) {
+                val host = userPreferencesDataStore.proxyHost.getUnsafe()
+                val port = userPreferencesDataStore.proxyPort.getUnsafe()
+                Proxy(Proxy.Type.SOCKS, InetSocketAddress(host, port))
+            } else null
             CertimarkChecker(
                 okHttpClient = okhttp3.OkHttpClient.Builder()
                     .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                     .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                     .build(),
                 apiUrl = apiUrl,
-                apiKeyPin = keyPin
+                apiKeyPin = keyPin,
+                proxy = proxy
             ).also { certimarkChecker = it }
         }
     }
@@ -422,8 +433,16 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
         certimarkResult = null
 
         certimarkJob = CoroutineScope(Dispatchers.Main).launch {
-            val result = withContext(Dispatchers.IO) {
-                getOrCreateCertimarkChecker().check(domain)
+            val result = if (domain.endsWith(".onion")) {
+                // Onion addresses are cryptographically secure by design.
+                // Query API only for description.
+                withContext(Dispatchers.IO) {
+                    getOrCreateCertimarkChecker().checkOnion(domain)
+                }
+            } else {
+                withContext(Dispatchers.IO) {
+                    getOrCreateCertimarkChecker().check(domain)
+                }
             }
             certimarkResult = result
             if (lastCheckedDomain == domain) {
@@ -435,9 +454,10 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
     private fun onShieldClick() {
         val result = certimarkResult
         val sslState = currentSslState
+        val isOnion = try { URL(currentPageUrl).host.endsWith(".onion") } catch (_: Exception) { false }
 
-        if (sslState is SslState.None || sslState == null) {
-            // HTTP page
+        if ((sslState is SslState.None || sslState == null) && !isOnion) {
+            // HTTP page (non-onion)
             AlertDialog.Builder(this)
                 .setIcon(createSslDrawableForState(SslState.None))
                 .setTitle(R.string.title_warning)
@@ -482,6 +502,7 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
             CertimarkStatus.NOT_MARKED -> getString(R.string.certimark_not_marked)
             CertimarkStatus.ERROR -> getString(R.string.certimark_error, result.errorMessage ?: "")
             CertimarkStatus.HTTP_INSECURE -> getString(R.string.certimark_http_warning)
+            CertimarkStatus.ONION_SECURE -> getString(R.string.certimark_onion_secure)
         }
 
         val fullHash = result.browserCertHash
@@ -555,6 +576,28 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
         super.onResume()
         // Invalidate checker so settings changes take effect
         certimarkChecker = null
+        // Apply proxy settings
+        applyProxySettings()
+    }
+
+    private fun applyProxySettings() {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) return
+
+        val enabled = userPreferencesDataStore.proxyEnabled.getUnsafe()
+        if (enabled) {
+            val host = userPreferencesDataStore.proxyHost.getUnsafe()
+            val port = userPreferencesDataStore.proxyPort.getUnsafe()
+            val proxyConfig = ProxyConfig.Builder()
+                .addProxyRule("socks5://$host:$port")
+                .build()
+            ProxyController.getInstance().setProxyOverride(
+                proxyConfig, { it.run() }, {}
+            )
+        } else {
+            ProxyController.getInstance().clearProxyOverride(
+                { it.run() }, {}
+            )
+        }
     }
 
     override fun onPause() {
@@ -592,10 +635,15 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
             currentSslState = sslState
             binding.searchSslStatus.setImageDrawable(createSslDrawableForState(sslState))
             binding.searchSslStatus.visibility = View.VISIBLE
+            // Trigger Certimark check when SSL becomes valid and we already have a URL
+            if (sslState is SslState.Valid && currentPageUrl.isNotEmpty() && viewState.pageUrl == null) {
+                triggerCertimarkCheck(currentPageUrl)
+            }
         }
         viewState.pageUrl?.let { url ->
             currentPageUrl = url
-            if (currentSslState is SslState.Valid) {
+            val isOnion = try { URL(url).host.endsWith(".onion") } catch (_: Exception) { false }
+            if (currentSslState is SslState.Valid || isOnion) {
                 triggerCertimarkCheck(url)
             } else {
                 certimarkJob?.cancel()
@@ -619,6 +667,10 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
                 if (it) {
                     R.drawable.ic_action_refresh
                 } else {
+                    // Page is loading — reset Certimark state so it re-checks
+                    certimarkJob?.cancel()
+                    certimarkResult = null
+                    lastCheckedDomain = null
                     R.drawable.ic_action_delete
                 }
             )

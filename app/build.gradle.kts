@@ -37,6 +37,15 @@ android {
         compose = true
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("/home/ak/bld/lux/lux.jks")
+            storePassword = providers.gradleProperty("luxStorePassword").orNull ?: ""
+            keyAlias = "lux"
+            keyPassword = providers.gradleProperty("luxKeyPassword").orNull ?: ""
+        }
+    }
+
     buildTypes {
         named("debug") {
             multiDexEnabled = true
@@ -48,9 +57,10 @@ android {
         }
 
         named("release") {
+            signingConfig = signingConfigs.getByName("release")
             multiDexEnabled = false
-            isMinifyEnabled = !isCi
-            isShrinkResources = !isCi
+            isMinifyEnabled = true
+            isShrinkResources = true
             setProguardFiles(listOf("proguard-project.txt"))
             enableUnitTestCoverage = false
             enableAndroidTestCoverage = false

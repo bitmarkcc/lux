@@ -16,6 +16,7 @@ import acr.browser.lightning.settings.screens.BookmarkSettingsScreen
 import acr.browser.lightning.settings.screens.CertimarkSettingsScreen
 import acr.browser.lightning.settings.screens.DebugSettingsScreen
 import acr.browser.lightning.settings.screens.DisplaySettingsScreen
+import acr.browser.lightning.settings.screens.ProxySettingsScreen
 import acr.browser.lightning.settings.screens.GeneralSettingsScreen
 import acr.browser.lightning.settings.screens.PrivacySettingsScreen
 import android.content.Intent
@@ -50,6 +51,7 @@ class SettingsActivity : ThemableActivity() {
     @Inject internal lateinit var displaySettingsScreen: DisplaySettingsScreen
     @Inject internal lateinit var generalSettingsScreen: GeneralSettingsScreen
     @Inject internal lateinit var privacySettingsScreen: PrivacySettingsScreen
+    @Inject internal lateinit var proxySettingsScreen: ProxySettingsScreen
 
     override fun onCreate(savedInstanceState: Bundle?) {
         injector.inject(this)
@@ -110,6 +112,12 @@ class SettingsActivity : ThemableActivity() {
 
                         SettingsNavigation.CERTIMARK -> CertimarkSettingsScreen(
                             certimarkSettingsScreen
+                        ) {
+                            navigationState = SettingsNavigation.ROOT
+                        }
+
+                        SettingsNavigation.PROXY -> ProxySettingsScreen(
+                            proxySettingsScreen
                         ) {
                             navigationState = SettingsNavigation.ROOT
                         }

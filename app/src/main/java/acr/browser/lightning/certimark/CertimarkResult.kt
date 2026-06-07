@@ -6,7 +6,8 @@ enum class CertimarkStatus {
     NO_MATCH,       // Domain is marked but cert doesn't match any
     NOT_MARKED,     // Domain has no marked certificates
     ERROR,          // Could not check
-    HTTP_INSECURE   // Plain HTTP connection (no TLS)
+    HTTP_INSECURE,  // Plain HTTP connection (no TLS)
+    ONION_SECURE    // Tor onion address (cryptographically secure by design)
 }
 
 data class CertEntry(

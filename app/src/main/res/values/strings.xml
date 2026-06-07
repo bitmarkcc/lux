@@ -360,4 +360,9 @@
     <string name="certimark_api_key_pin">API server public key SHA-256</string>
     <string name="certimark_api_key_pin_empty">Not set (no pinning)</string>
     <string name="certimark_api_key_pin_hint">SHA-256 hex fingerprint of server public key</string>
+    <string name="certimark_onion_secure">Secure connection. The onion address cryptographically identifies this site.</string>
+    <string name="settings_proxy">SOCKS Proxy</string>
+    <string name="proxy_enabled">Enable SOCKS proxy</string>
+    <string name="proxy_host">Proxy host</string>
+    <string name="proxy_port">Proxy port</string>
 </resources>

@@ -26,4 +26,5 @@ fun Context.createCertimarkDrawable(status: CertimarkStatus): Drawable? = when (
     CertimarkStatus.NOT_MARKED -> ContextCompat.getDrawable(this, R.drawable.ic_shield_grey)
     CertimarkStatus.ERROR -> ContextCompat.getDrawable(this, R.drawable.ic_shield_grey)
     CertimarkStatus.HTTP_INSECURE -> ContextCompat.getDrawable(this, R.drawable.ic_shield_red)
+    CertimarkStatus.ONION_SECURE -> ContextCompat.getDrawable(this, R.drawable.ic_shield_green)
 }

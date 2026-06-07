@@ -67,3 +67,51 @@
 
 -dontwarn androidx.window.extensions.**
 -dontwarn androidx.window.sidecar.**
+
+# Dagger
+-keep class dagger.** { *; }
+-keep class javax.inject.** { *; }
+-keep class * extends dagger.internal.Factory
+-keep class * extends dagger.internal.Binding
+-keep class **$$InjectAdapter { *; }
+-keep class **$$ModuleAdapter { *; }
+-keep class **$$ComponentBuilder { *; }
+-keepclassmembers,allowobfuscation class * {
+    @javax.inject.Inject <fields>;
+    @javax.inject.Inject <init>(...);
+    @dagger.Provides <methods>;
+    @dagger.Binds <methods>;
+}
+-keep class *_Factory { *; }
+-keep class *_MembersInjector { *; }
+-keep class * implements dagger.Component { *; }
+-keep class * implements dagger.internal.ComponentImplementation { *; }
+-keep @dagger.Component class * { *; }
+-keep @dagger.Module class * { *; }
+-keep @dagger.Subcomponent class * { *; }
+
+# Kotlin Coroutines
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+-keepclassmembers class kotlinx.coroutines.** {
+    volatile <fields>;
+}
+
+# DataStore
+-keepclassmembers class * extends androidx.datastore.preferences.protobuf.GeneratedMessageLite {
+    <fields>;
+}
+
+# Compose
+-keep class androidx.compose.** { *; }
+-dontwarn androidx.compose.**
+
+# Mezzanine generated implementations
+-keep class com.anthonycr.mezzanine.** { *; }
+
+# Keep the Dagger-generated component implementations
+-keep class acr.browser.lightning.browser.di.DaggerAppComponent { *; }
+-keep class acr.browser.lightning.browser.di.DaggerAppComponent$** { *; }
+
+# Keep all app classes
+-keep class acr.browser.lightning.** { *; }

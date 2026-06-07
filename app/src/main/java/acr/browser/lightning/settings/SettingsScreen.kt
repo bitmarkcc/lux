@@ -53,6 +53,7 @@ enum class SettingsNavigation {
     PRIVACY,
     ADVANCED,
     CERTIMARK,
+    PROXY,
     ABOUT,
     FAQ,
     DEBUG
@@ -98,6 +99,9 @@ fun SettingsScreen(
             }
             SettingsClickable(SettingsClickableState(title = stringResource(R.string.settings_certimark))) {
                 onNavigate(SettingsNavigation.CERTIMARK)
+            }
+            SettingsClickable(SettingsClickableState(title = stringResource(R.string.settings_proxy))) {
+                onNavigate(SettingsNavigation.PROXY)
             }
             SettingsClickable(
                 SettingsClickableState(

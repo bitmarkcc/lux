@@ -4,6 +4,8 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.security.MessageDigest
 import java.security.cert.X509Certificate
 import javax.net.ssl.SSLSocket
@@ -15,45 +17,78 @@ import javax.net.ssl.SSLSocketFactory
 class CertimarkChecker(
     private val okHttpClient: OkHttpClient,
     private val apiUrl: String = "https://certimark.cc",
-    private val apiKeyPin: String? = null
+    private val apiKeyPin: String? = null,
+    private val proxy: java.net.Proxy? = null
 ) {
 
     private val cache = mutableMapOf<String, CachedResult>()
     private val cacheTtl = 5 * 60 * 1000L // 5 minutes
 
     /**
-     * OkHttpClient for API calls with public key pinning enforced via network interceptor.
-     * The interceptor runs after TLS, so it checks the actual connection's certificate.
+     * OkHttpClient for API calls with optional proxy and public key pinning.
      */
     private val apiClient: OkHttpClient by lazy {
-        if (apiKeyPin != null && apiUrl.startsWith("https", ignoreCase = true)) {
-            okHttpClient.newBuilder()
-                .addNetworkInterceptor(Interceptor { chain ->
-                    val connection = chain.connection()
-                    val certs = connection?.handshake()?.peerCertificates
-                    if (certs.isNullOrEmpty()) {
-                        throw SecurityException("API server presented no certificates")
-                    }
-                    val cert = certs[0] as? X509Certificate
-                        ?: throw SecurityException("API server certificate is not X.509")
-                    val serverKeyHash = sha256Hex(cert.publicKey.encoded)
-                    if (serverKeyHash != apiKeyPin) {
-                        throw SecurityException(
-                            "API server public key mismatch. Expected: $apiKeyPin, got: $serverKeyHash"
-                        )
-                    }
-                    chain.proceed(chain.request())
-                })
-                .build()
-        } else {
-            okHttpClient
+        val builder = okHttpClient.newBuilder()
+
+        if (proxy != null) {
+            builder.proxy(proxy)
         }
+
+        if (apiKeyPin != null && apiUrl.startsWith("https", ignoreCase = true)) {
+            builder.addNetworkInterceptor(Interceptor { chain ->
+                val connection = chain.connection()
+                val certs = connection?.handshake()?.peerCertificates
+                if (certs.isNullOrEmpty()) {
+                    throw SecurityException("API server presented no certificates")
+                }
+                val cert = certs[0] as? X509Certificate
+                    ?: throw SecurityException("API server certificate is not X.509")
+                val serverKeyHash = sha256Hex(cert.publicKey.encoded)
+                if (serverKeyHash != apiKeyPin) {
+                    throw SecurityException(
+                        "API server public key mismatch. Expected: $apiKeyPin, got: $serverKeyHash"
+                    )
+                }
+                chain.proceed(chain.request())
+            })
+        }
+
+        builder.build()
     }
 
     private data class CachedResult(
         val result: CertimarkResult,
         val timestamp: Long
     )
+
+    /**
+     * Check an onion domain. No TLS check needed — the onion address is the identity.
+     * Queries the API only to fetch the description.
+     * Must be called from a background thread.
+     */
+    fun checkOnion(domain: String): CertimarkResult {
+        val cached = cache[domain]
+        if (cached != null && System.currentTimeMillis() - cached.timestamp < cacheTtl) {
+            return cached.result
+        }
+
+        val result = try {
+            val apiData = queryApi(domain)
+            CertimarkResult(
+                status = CertimarkStatus.ONION_SECURE,
+                domain = domain,
+                description = apiData?.description
+            )
+        } catch (_: Exception) {
+            CertimarkResult(
+                status = CertimarkStatus.ONION_SECURE,
+                domain = domain
+            )
+        }
+
+        cache[domain] = CachedResult(result, System.currentTimeMillis())
+        return result
+    }
 
     /**
      * Check the certificate for the given domain.
@@ -162,7 +197,13 @@ class CertimarkChecker(
 
     private fun fetchCertificate(domain: String): CertInfo? {
         val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
-        val socket = factory.createSocket(domain, 443) as SSLSocket
+        val socket = if (proxy != null) {
+            val rawSocket = Socket(proxy)
+            rawSocket.connect(InetSocketAddress.createUnresolved(domain, 443), 10000)
+            factory.createSocket(rawSocket, domain, 443, true) as SSLSocket
+        } else {
+            factory.createSocket(domain, 443) as SSLSocket
+        }
         try {
             socket.soTimeout = 10000
             socket.startHandshake()
