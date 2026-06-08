@@ -8,12 +8,10 @@ import acr.browser.lightning.DefaultBrowserActivity
 import acr.browser.lightning.R
 import acr.browser.lightning.concurrency.AppCoroutineScope
 import acr.browser.lightning.concurrency.CoroutineDispatchers
-import acr.browser.lightning.constant.FILE
 import acr.browser.lightning.dialog.BrowserDialog.setDialogSize
 import acr.browser.lightning.extensions.snackbar
 import acr.browser.lightning.log.Logger
 import acr.browser.lightning.preference.UserPreferencesDataStore
-import acr.browser.lightning.utils.FileUtils.addNecessarySlashes
 import acr.browser.lightning.utils.Utils
 import android.app.Activity
 import android.app.Dialog
@@ -21,7 +19,6 @@ import android.app.DownloadManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Environment
 import android.text.TextUtils
 import android.webkit.CookieManager
@@ -30,8 +27,6 @@ import android.webkit.URLUtil
 import androidx.appcompat.app.AlertDialog
 import androidx.core.net.toUri
 import kotlinx.coroutines.launch
-import java.io.File
-import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -185,22 +180,11 @@ class DownloadHandler @Inject constructor(
             return
         }
 
-        // set downloaded file destination to /sdcard/Download.
-        // or, should it be set to one of several Environment.DIRECTORY* dirs
-        // depending on mimetype?
-        var location = "TODO" // TODO: preferences.getDownloadDirectory();
-        location = addNecessarySlashes(location)
-        val downloadFolder = location.toUri()
-
-        if (!isWriteAccessAvailable(downloadFolder)) {
-            context.snackbar(R.string.problem_location_download)
-            return
-        }
         val newMimeType =
             MimeTypeMap.getSingleton().getMimeTypeFromExtension(Utils.guessFileExtension(filename))
         logger.log(TAG, "New mimetype: $newMimeType")
         request.setMimeType(newMimeType)
-        request.setDestinationUri((FILE + location + filename).toUri())
+        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
         // let this downloaded file be scanned by MediaScanner - so that it can
         // show up in Gallery app, for example.
         request.setVisibleInDownloadsUi(true)
@@ -286,24 +270,5 @@ class DownloadHandler @Inject constructor(
             return sb.toString()
         }
 
-        private fun isWriteAccessAvailable(fileUri: Uri): Boolean {
-            if (fileUri.path == null) {
-                return false
-            }
-            val file = File(fileUri.path)
-
-            if (!file.isDirectory && !file.mkdirs()) {
-                return false
-            }
-
-            try {
-                if (file.createNewFile()) {
-                    file.delete()
-                }
-                return true
-            } catch (ignored: IOException) {
-                return false
-            }
-        }
     }
 }

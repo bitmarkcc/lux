@@ -11,6 +11,7 @@ import acr.browser.lightning.preference.UserPreferencesDataStore
 import android.Manifest
 import android.app.Dialog
 import android.content.DialogInterface
+import android.os.Build
 import android.text.format.Formatter
 import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
@@ -42,14 +43,8 @@ class DownloadPermissionsHelper @Inject constructor(
         mimeType: String?,
         contentLength: Long
     ) {
-        PermissionX.init(activity)
-            .permissions(
-                listOf(
-                    Manifest.permission.READ_EXTERNAL_STORAGE,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                )
-            ).request { allGranted, _, _ ->
-                if (allGranted) {
+        val proceed = { granted: Boolean ->
+                if (granted) {
                     val fileName = MimeTypeMap.getFileExtensionFromUrl(url)
                         .takeIf(String::isNotBlank)
                         ?: if (MimeTypeMap.getSingleton().hasMimeType(mimeType)) {
@@ -107,10 +102,24 @@ class DownloadPermissionsHelper @Inject constructor(
                     setDialogSize(activity, dialog)
                     logger.log(TAG, "Downloading: $fileName")
                 } else {
-                    //TODO show message
                     logger.log(TAG, "Download permission denied")
                 }
-            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Scoped storage: no permissions needed for DownloadManager
+            proceed(true)
+        } else {
+            PermissionX.init(activity)
+                .permissions(
+                    listOf(
+                        Manifest.permission.READ_EXTERNAL_STORAGE,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    )
+                ).request { allGranted, _, _ ->
+                    proceed(allGranted)
+                }
+        }
     }
 
     companion object {
