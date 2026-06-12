@@ -266,43 +266,46 @@ fun SettingsBottomSheetChooser(
             modifier = Modifier.padding(start = 16.dp, bottom = 16.dp),
             style = MaterialTheme.typography.titleMedium
         )
-        state.values.forEachIndexed { index, value ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .requiredHeight(48.dp)
-                    .clickable {
-                        selectedState = index
-                        scope.launch {
-                            delay(500)
-                            sheetState.hide()
-                            onSelected(index)
-                        }
-                    },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.padding(start = 16.dp),
-                    horizontalAlignment = Alignment.Start
-                ) {
-                    RadioButton(
-                        selected = index == selectedState,
-                        onClick = {
+        Column(
+            modifier = Modifier.verticalScroll(rememberScrollState())
+        ) {
+            state.values.forEachIndexed { index, value ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            selectedState = index
                             scope.launch {
                                 delay(500)
                                 sheetState.hide()
                                 onSelected(index)
                             }
-                        }
-                    )
-                }
-                Column(
-                    modifier = Modifier
-                        .padding(end = 16.dp)
-                        .fillMaxWidth(),
-                    horizontalAlignment = Alignment.Start
+                        },
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(value, style = MaterialTheme.typography.titleMedium)
+                    Column(
+                        modifier = Modifier.padding(start = 16.dp),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        RadioButton(
+                            selected = index == selectedState,
+                            onClick = {
+                                scope.launch {
+                                    delay(500)
+                                    sheetState.hide()
+                                    onSelected(index)
+                                }
+                            }
+                        )
+                    }
+                    Column(
+                        modifier = Modifier
+                            .padding(end = 16.dp)
+                            .fillMaxWidth(),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Text(value, style = MaterialTheme.typography.titleMedium)
+                    }
                 }
             }
         }

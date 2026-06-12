@@ -95,15 +95,16 @@ class CertimarkChecker(
      * Makes a separate TLS connection to get the cert, then queries the API.
      * Must be called from a background thread.
      */
-    fun check(domain: String): CertimarkResult {
-        // Check cache
+    fun check(domain: String, trustedSigners: Set<String> = emptySet(), trustedCerts: Set<String> = emptySet()): CertimarkResult {
+        // Check cache (invalidate if trustedSigners/trustedCerts changed)
         val cached = cache[domain]
-        if (cached != null && System.currentTimeMillis() - cached.timestamp < cacheTtl) {
+        if (cached != null && System.currentTimeMillis() - cached.timestamp < cacheTtl
+            && trustedSigners.isEmpty() && trustedCerts.isEmpty()) {
             return cached.result
         }
 
         val result = try {
-            doCheck(domain)
+            doCheck(domain, trustedSigners, trustedCerts)
         } catch (e: Exception) {
             CertimarkResult(
                 status = CertimarkStatus.ERROR,
@@ -116,7 +117,7 @@ class CertimarkChecker(
         return result
     }
 
-    private fun doCheck(domain: String): CertimarkResult {
+    private fun doCheck(domain: String, trustedSigners: Set<String> = emptySet(), trustedCerts: Set<String> = emptySet()): CertimarkResult {
         // Step 1: Connect to domain and get certificate
         val certInfo = fetchCertificate(domain)
             ?: return CertimarkResult(
@@ -140,6 +141,18 @@ class CertimarkChecker(
                 status = CertimarkStatus.NOT_MARKED,
                 domain = domain,
                 browserCertHash = certInfo.fingerprint,
+                description = apiData.description
+            )
+        }
+
+        // Check if user has explicitly trusted this cert for this domain
+        val trustedKey = "$domain:${certInfo.fingerprint}"
+        if (trustedKey in trustedCerts) {
+            return CertimarkResult(
+                status = CertimarkStatus.TRUSTED,
+                domain = domain,
+                browserCertHash = certInfo.fingerprint,
+                certs = apiData.certs,
                 description = apiData.description
             )
         }
@@ -168,6 +181,25 @@ class CertimarkChecker(
                 } catch (_: Exception) {
                     // skip this cert
                 }
+            }
+        }
+
+        // Check if matched cert is signed by a trusted signer
+        if (matchIndex >= 0 && trustedSigners.isNotEmpty()) {
+            val certSigners = apiData.certs[matchIndex].signerPubkeys
+            val matchedSigner = certSigners.firstOrNull { it in trustedSigners }
+            if (matchedSigner != null) {
+                return CertimarkResult(
+                    status = CertimarkStatus.SIGNED_TRUSTED,
+                    domain = domain,
+                    browserCertHash = certInfo.fingerprint,
+                    matchedCert = apiData.certs[matchIndex],
+                    matchIndex = matchIndex,
+                    keyMatch = keyMatch,
+                    certs = apiData.certs,
+                    description = apiData.description,
+                    trustedSignerKey = matchedSigner
+                )
             }
         }
 
@@ -243,12 +275,17 @@ class CertimarkChecker(
         val certs = mutableListOf<CertEntry>()
         for (i in 0 until certsArray.length()) {
             val c = certsArray.getJSONObject(i)
+            val signerPubkeysArray = c.optJSONArray("signerPubkeys")
+            val signerPubkeys = if (signerPubkeysArray != null) {
+                (0 until signerPubkeysArray.length()).map { signerPubkeysArray.getString(it) }
+            } else emptyList()
             certs.add(
                 CertEntry(
                     hashType = c.optString("hash_type"),
                     hashHex = c.optString("hash_hex"),
                     weight = c.optLong("weight", 0),
-                    certUrl = c.optString("cert_url", null)
+                    certUrl = c.optString("cert_url", null),
+                    signerPubkeys = signerPubkeys
                 )
             )
         }

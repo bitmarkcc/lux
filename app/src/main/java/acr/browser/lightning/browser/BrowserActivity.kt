@@ -132,6 +132,7 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
     private var currentSslState: SslState = SslState.None
     private var currentPageUrl: String = ""
     private var certimarkChecker: CertimarkChecker? = null
+    private var certimarkDirty = false
 
     private fun getOrCreateCertimarkChecker(): CertimarkChecker {
         return certimarkChecker ?: run {
@@ -423,16 +424,23 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
             null
         } ?: return
 
-        if (domain == lastCheckedDomain && certimarkResult != null) {
+        if (domain == lastCheckedDomain && certimarkResult != null && !certimarkDirty) {
             binding.searchSslStatus.setImageDrawable(createCertimarkDrawable(certimarkResult!!.status))
             return
         }
+        certimarkDirty = false
 
         certimarkJob?.cancel()
         lastCheckedDomain = domain
         certimarkResult = null
 
         certimarkJob = CoroutineScope(Dispatchers.Main).launch {
+            val trustedSigners = withContext(Dispatchers.IO) {
+                userPreferencesDataStore.trustedSigners.get()
+            }
+            val trustedCerts = withContext(Dispatchers.IO) {
+                userPreferencesDataStore.trustedCerts.get()
+            }
             val result = if (domain.endsWith(".onion")) {
                 // Onion addresses are cryptographically secure by design.
                 // Query API only for description.
@@ -441,7 +449,7 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
                 }
             } else {
                 withContext(Dispatchers.IO) {
-                    getOrCreateCertimarkChecker().check(domain)
+                    getOrCreateCertimarkChecker().check(domain, trustedSigners, trustedCerts)
                 }
             }
             certimarkResult = result
@@ -474,7 +482,6 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
         }
 
         if (result == null) {
-            // Check still in progress
             AlertDialog.Builder(this)
                 .setTitle(lastCheckedDomain ?: "")
                 .setMessage(getString(R.string.certimark_checking))
@@ -498,6 +505,11 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
                 val weight = result.matchedCert?.weight?.let { "\n${getString(R.string.certimark_weight)}: $it" } ?: ""
                 "$label$weight"
             }
+            CertimarkStatus.SIGNED_TRUSTED -> {
+                val weight = result.matchedCert?.weight?.let { "\n${getString(R.string.certimark_weight)}: $it" } ?: ""
+                "${getString(R.string.certimark_signed_trusted)}\n${getString(R.string.certimark_signed_by)}: ${result.trustedSignerKey}$weight"
+            }
+            CertimarkStatus.TRUSTED -> getString(R.string.certimark_cert_trusted)
             CertimarkStatus.NO_MATCH -> getString(R.string.certimark_no_match)
             CertimarkStatus.NOT_MARKED -> getString(R.string.certimark_not_marked)
             CertimarkStatus.ERROR -> getString(R.string.certimark_error, result.errorMessage ?: "")
@@ -554,12 +566,158 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
             layout.addView(hashRow)
         }
 
+        // Show signer info — each pubkey is a clickable link to trust prompt
+        val signerPubkeys = result.matchedCert?.signerPubkeys ?: emptyList()
+        if (signerPubkeys.isNotEmpty() && (result.status == CertimarkStatus.MATCH_TOP || result.status == CertimarkStatus.MATCH_OTHER)) {
+            layout.addView(TextView(this).apply {
+                text = "${getString(R.string.certimark_signed_by)}:"
+                textSize = 12f
+                setPadding(0, (12 * dp).toInt(), 0, 0)
+            })
+
+            // First signer as clickable link
+            layout.addView(TextView(this).apply {
+                text = signerPubkeys[0]
+                textSize = 12f
+                setTextColor(0xFF89B4FA.toInt()) // blue link color
+                setPadding(0, (4 * dp).toInt(), 0, 0)
+                setOnClickListener { showTrustSignerPrompt(signerPubkeys[0]) }
+            })
+
+            // Extra signers container (hidden initially)
+            val extraSignersLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = android.view.View.GONE
+            }
+            val max = minOf(signerPubkeys.size, 16)
+            for (i in 1 until max) {
+                extraSignersLayout.addView(TextView(this).apply {
+                    text = signerPubkeys[i]
+                    textSize = 12f
+                    setTextColor(0xFF89B4FA.toInt())
+                    setPadding(0, (4 * dp).toInt(), 0, 0)
+                    setOnClickListener { showTrustSignerPrompt(signerPubkeys[i]) }
+                })
+            }
+            layout.addView(extraSignersLayout)
+
+            // "and N more" expand link
+            if (signerPubkeys.size > 1) {
+                val expandText = TextView(this).apply {
+                    text = "and ${signerPubkeys.size - 1} more"
+                    textSize = 12f
+                    setTextColor(0xFF89B4FA.toInt())
+                    setPadding(0, (4 * dp).toInt(), 0, 0)
+                    setOnClickListener {
+                        extraSignersLayout.visibility = android.view.View.VISIBLE
+                        this.visibility = android.view.View.GONE
+                    }
+                }
+                layout.addView(expandText)
+            }
+        }
+
+        // "Trust certificate" button for MATCH_OTHER
+        if (result.status == CertimarkStatus.MATCH_OTHER && result.browserCertHash != null) {
+            val trustCertBtn = android.widget.Button(this).apply {
+                text = getString(R.string.certimark_trust_cert)
+                textSize = 14f
+                setPadding((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), (8 * dp).toInt())
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                lp.topMargin = (16 * dp).toInt()
+                layoutParams = lp
+            }
+            layout.addView(trustCertBtn)
+            trustCertBtn.setOnClickListener {
+                trustCertificate(result.domain, result.browserCertHash)
+            }
+        }
+
         AlertDialog.Builder(this)
             .setIcon(createCertimarkDrawable(result.status))
             .setTitle(title)
             .setView(container)
             .setPositiveButton(R.string.action_ok, null)
             .show()
+    }
+
+    private fun showTrustSignerPrompt(pubkey: String) {
+        val dp = resources.displayMetrics.density
+        val pad = (20 * dp).toInt()
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, (12 * dp).toInt(), pad, 0)
+        }
+
+        layout.addView(TextView(this).apply {
+            text = getString(R.string.certimark_trust_signer_message)
+            textSize = 14f
+        })
+
+        val keyRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, (12 * dp).toInt(), 0, 0)
+        }
+        keyRow.addView(TextView(this).apply {
+            text = pubkey
+            textSize = 12f
+            setTextIsSelectable(true)
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+
+        val copyBtn = ImageButton(this).apply {
+            setImageResource(R.drawable.ic_copy)
+            setBackgroundResource(android.R.color.transparent)
+            contentDescription = "Copy public key"
+            val btnSize = (32 * dp).toInt()
+            layoutParams = LinearLayout.LayoutParams(btnSize, btnSize)
+            setOnClickListener {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Public Key", pubkey))
+                Toast.makeText(this@BrowserActivity, "Public key copied", Toast.LENGTH_SHORT).show()
+            }
+        }
+        keyRow.addView(copyBtn)
+        layout.addView(keyRow)
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.certimark_trust_signer_title))
+            .setView(layout)
+            .setPositiveButton(R.string.certimark_trust_yes) { _, _ ->
+                trustSigner(pubkey)
+            }
+            .setNegativeButton(R.string.certimark_trust_no, null)
+            .show()
+    }
+
+    private fun trustSigner(pubkey: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val current = userPreferencesDataStore.trustedSigners.get().toMutableSet()
+            current.add(pubkey)
+            userPreferencesDataStore.trustedSigners.set(current)
+            withContext(Dispatchers.Main) {
+                lastCheckedDomain = null // force re-check
+                triggerCertimarkCheck(currentPageUrl)
+                Toast.makeText(this@BrowserActivity, getString(R.string.certimark_signer_trusted), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun trustCertificate(domain: String, certHash: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val current = userPreferencesDataStore.trustedCerts.get().toMutableSet()
+            current.add("$domain:$certHash")
+            userPreferencesDataStore.trustedCerts.set(current)
+            withContext(Dispatchers.Main) {
+                lastCheckedDomain = null
+                triggerCertimarkCheck(currentPageUrl)
+                Toast.makeText(this@BrowserActivity, getString(R.string.certimark_cert_trusted), Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -574,8 +732,9 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Invalidate checker so settings changes take effect
+        // Invalidate checker so settings changes take effect on next check
         certimarkChecker = null
+        certimarkDirty = true
         // Apply proxy settings
         applyProxySettings()
     }
@@ -636,6 +795,7 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
             binding.searchSslStatus.setImageDrawable(createSslDrawableForState(sslState))
             binding.searchSslStatus.visibility = View.VISIBLE
             // Trigger Certimark check when SSL becomes valid and we already have a URL
+            // Only if pageUrl is not also changing in this same update (it will trigger its own check)
             if (sslState is SslState.Valid && currentPageUrl.isNotEmpty() && viewState.pageUrl == null) {
                 triggerCertimarkCheck(currentPageUrl)
             }
@@ -665,6 +825,10 @@ abstract class BrowserActivity : ThemableBrowserActivity() {
         viewState.isRefresh?.let {
             binding.searchRefresh.setImageResource(
                 if (it) {
+                    // Page finished loading — trigger Certimark re-check if SSL is valid
+                    if (currentSslState is SslState.Valid && currentPageUrl.isNotEmpty()) {
+                        triggerCertimarkCheck(currentPageUrl)
+                    }
                     R.drawable.ic_action_refresh
                 } else {
                     // Page is loading — reset Certimark state so it re-checks

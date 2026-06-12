@@ -30,6 +30,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -537,6 +538,24 @@ class UserPreferencesDataStore @Inject constructor(
         defaultValue = 9050
     )
 
+    /**
+     * Set of trusted Certimark signing keys (public key hex strings).
+     */
+    val trustedSigners: NonNullPreferenceStore<Set<String>> = NonNullPreferenceStore(
+        key = stringSetPreferencesKey(TRUSTED_SIGNERS),
+        dataStore = dataStore,
+        defaultValue = emptySet()
+    )
+
+    /**
+     * Set of trusted Certimark certificates ("domain:hash" format).
+     */
+    val trustedCerts: NonNullPreferenceStore<Set<String>> = NonNullPreferenceStore(
+        key = stringSetPreferencesKey(TRUSTED_CERTS),
+        dataStore = dataStore,
+        defaultValue = emptySet()
+    )
+
     companion object {
         private const val FILE_NAME = "settings"
     }
@@ -588,3 +607,5 @@ private const val CERTIMARK_API_KEY_PIN = "certimarkApiKeyPin"
 private const val PROXY_ENABLED = "proxyEnabled"
 private const val PROXY_HOST = "proxyHost"
 private const val PROXY_PORT = "proxyPort"
+private const val TRUSTED_SIGNERS = "trustedSigners"
+private const val TRUSTED_CERTS = "trustedCerts"
